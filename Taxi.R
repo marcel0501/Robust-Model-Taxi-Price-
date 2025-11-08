@@ -1,9 +1,7 @@
 # Loading the Data
 ds = read.csv("https://raw.githubusercontent.com/marcel0501/Robust-Model-Taxi-Price-/refs/heads/main/taxi_trip_pricing.csv")
-summary(ds$Trip_Price^0.38)
-hist(ds$Trip_Price^0.38)
+summary(ds)
 # Inspecting the Data 
-head(ds)
 
 #Count of missing values and duplicates AND EVENTUALLY SOLVING ISSUES#
 sapply(ds, function(x)(sum(is.null((x)))))
@@ -154,12 +152,10 @@ summary(fitUpdate)
 resettest(fitUpdate, power = 2, type = "fitted")
 bptest(fitUpdate)
 
-crPlots(fitUpdate
-        )
 
 
 library(car)
-influencePlot(fit,  main="Influence Plot", sub="Circle size is proportial to Cook's Distance" )
+influencePlot(fit1,  main="Influence Plot", sub="Circle size is proportial to Cook's Distance" )
 
 
 # Cook's D are contained in the fitted model (object fit)
@@ -188,6 +184,7 @@ summary(fitUpdate_no_influential)
 par(mfrow=c(2,2))
 plot(fitUpdate_no_influential)
 bptest(fitUpdate_no_influential)
+resettest(fitUpdate_no_influential)
 
 library("car")
 BOOT.MOD=Boot(fitUpdate_no_influential, R=1999)
@@ -239,7 +236,18 @@ mean_r2adj <- mean(results_r2adj, na.rm=TRUE)
 print(mean_rmse)
 print(mean_r2adj)
 # Final Model Summary
-final_model <- lm(Trip_Price^0.38 ~ . + I(Trip_Distance_km^(0.78)) + I(Trip_Duration_Minutes^(2)), data = df_no_influential)
+gam1 = gam(Trip_Price^0.38 ~ .-Trip_Distance_km-Trip_Duration_Minutes s(Trip_Distance_km) + s(Trip_Duration_Minutes), data = df_no_influential)
+plot(gam1)
+final_model <- lm(Trip_Price^0.38 ~ . + I(Trip_Distance_km^4) + I(Trip_Duration_Minutes^2), data = df_no_influential)
+resettest(final_model)
+bptest(final_model)
 summary(final_model)
+par(mfrow=c(2,2))
+plot(final_model)
 # Fine Taxi.R
+
+#Last look at influential points
+library("car")
+influencePlot(final_model,  main="Influence Plot", sub="Circle size is proportial to Cook's Distance" )
+
 
