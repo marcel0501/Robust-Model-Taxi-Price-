@@ -61,10 +61,10 @@ corrplot(cor_matrix, method = "circle", type = "upper", tl.cex = 0.7)
 
 library(psych)
 pairs.panels(ds[,sapply(ds,is.numeric)], 
-                 method = "pearson", # correlation method
-                 hist.col = "#00AFBB",
-                 density = TRUE,  # show density plots
-                 ellipses = FALSE # show correlation ellipses
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = FALSE # show correlation ellipses
 )
 
 #We notice already some influence of outliers on some variables
@@ -80,10 +80,7 @@ barplot(table(ds$Weather), main="Weather", col="lightgreen")
 
 
 #End of EDA 
-
-#Starting with modeling 1. Colinearity#
-#We start by factoring categorical variables
-
+##We'll proceed by transforming our response variable in a binary one by using CoxBox + Median 
 #As we said in row 56, we will try to get the values of the factors low for good conditions so lower prices and high values for bad conditions so higher prices
 # to improve interpretability of the coefficients
 d1 <- ds
@@ -115,131 +112,90 @@ resettest(fit1, power = 2, type = "fitted")
 # p-value < 0.05, model not adequate, we need to transform the response variable, Box-Cox transformation
 
 library(MASS)
-boxcoxreg1 <- boxcox(fit1)
-lambda1 <- boxcoxreg1$x[which(boxcoxreg1$y==max(boxcoxreg1$y))]
-lambda1
+#boxcoxreg1 <- boxcox(fit1)
+#lambda1 <- boxcoxreg1$x[which(boxcoxreg1$y==max(boxcoxreg1$y))]
+#lambda1
+#Lambda is about 0.38
+#d1$Trip_Price <- d1$Trip_Price^0.38
+#We will divide our response variable in Low Price and High Price based on median
+median_price <- median(d1$Trip_Price)
+d1$Trip_Price <- ifelse(d1$Trip_Price <= median_price, 0, 1)
 
-# Lambda vicino allo 0, serve trasformare la variabile risposta
-hist(d1$Trip_Price)
-hist(log(d1$Trip_Price)) # Poco Gaussiana ma non perde i valori intorno all'otto
-hist(d1$Trip_Price^0.38) # Molto Gaussiana ma perde i valori intorno all'otto
+table(d1$Trip_Price)
+prop.table(table(d1$Trip_Price))
 
-fitLog <- update(fit1, log(.) ~ .)
-summary(fitLog)
-resettest(fitLog, power = 2, type = "fitted")
+fit2<- glm(Trip_Price ~ ., data = d1, family = binomial)
+summary(fit2)
+#AIC 626.82
 
-fitExponential <- update(fit1, .^0.38 ~ .)
-summary(fitExponential)
-resettest(fitExponential, power = 2, type = "fitted")
+#Let's see the coefficients
+library(coefplot)
+coefplot(fit2, intercept = FALSE, main = "Coefficient Plot for Logistic Regression Model")
 
-#Dal reset test notiamo che fitExponential è il modello migliore, andiamo avanti con questo
-#Diagnostica del modello
-par(mfrow=c(2,2))
-plot(fitExponential)
+library(forestmodel)
+print(forest_model(fit2),text_size = 5)
 
-#Notiamo la presenza di outliers e di eteroschedasticità
-#Let's see if we need to transform some predictors
-#library(car)
-#spreadLevelPlot(fitExponential)
-#Possiamo provare a trasformare Trip_Distance_km e Trip_Duration_Minutes
-library(gam)
-gam2 <- gam(Trip_Price^0.38 ~ . , data = d1)
-summary(gam2)
-gam1 <- gam(Trip_Price^0.38 ~ . -Trip_Distance_km +s(Trip_Distance_km)-Per_Km_Rate+s(Per_Km_Rate)-Per_Minute_Rate+s(Per_Minute_Rate)-Trip_Duration_Minutes+s(Trip_Duration_Minutes),data = d1)
-summary(gam1)
-plot(gam1)
+drop1(fit2, test="LRT")
+summary(fit2)
 
-fitUpdate <- update(fitExponential, . ~ . + I(Trip_Distance_km^(0.78)) + I(Trip_Duration_Minutes^(2)))
-summary(fitUpdate)
-resettest(fitUpdate, power = 2, type = "fitted")
-bptest(fitUpdate)
+#Deviance of full model vs null model
+null = glm(Trip_Price ~ 1, data=d1,family = binomial)
+summary(null)
+summary(fit2)
 
-crPlots(fitUpdate
-        )
+R2 = 1- (fit2$deviance / null$deviance)
+R2
 
+fit3 = glm(Trip_Price ~ Trip_Distance_km+Per_Km_Rate+Per_Minute_Rate+Trip_Duration_Minutes+Passenger_Count, data = d1, family = binomial)
+summary(fit3)
 
-library(car)
-influencePlot(fit,  main="Influence Plot", sub="Circle size is proportial to Cook's Distance" )
+fit3$deviance-fit2$deviance
+anova(fit3,fit2, test="LRT")
+R2 = 1- (fit3$deviance / null$deviance)
+R2
+par(mfrow=c(2,2)) 
+plot(fit3)
 
+#Accuracy
+predicted_probabilities <- predict(fit3, type = "response")
+predicted_classes <- ifelse(predicted_probabilities > 0.5, 1, 0)
+confusion_matrix <- table(d1$Trip_Price, predicted_classes)
+confusion_matrix
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+accuracy
+#Accuracy 0.887 GREAT
 
-# Cook's D are contained in the fitted model (object fit)
-methods(class = class(fitUpdate))
+#Check Zero Variance , Collinearity, Separation
+#Zero variance
+library(funModeling)
+library(dplyr)
+status=df_status(d1, print_results = F)
+status
 
-cooksd <- cooks.distance(fitUpdate)
-cooksda=data.frame(cooksd)
-summary(cooksd)
+#No zero variance variables (Trip_Distance_km+Per_Km_Rate+Per_Minute_Rate+Trip_Duration_Minutes+Passenger_Count+Base_Fare
 
-# cutoff of cookD  4/(n-k).. NB n should be n used in the model!!!
+#Collinearity 
+library(mctest)
+imcdiag(fit3)
 
-n_used=length(fitUpdate$residuals)
-n_used
-# be careful!!! 
+#No collinearity issues detected
 
-cutoff <- 4/(n_used-length(fitUpdate$coefficients)-2)
-
-
-plot(fitUpdate, which=4, cook.levels=cutoff)
-abline(h=cutoff)
-
-df_no_influential <- d1[cooksd < cutoff, ]
-nrow(df_no_influential)
-fitUpdate_no_influential <- lm(Trip_Price^0.38 ~ . + I(Trip_Distance_km^(0.78)) + I(Trip_Duration_Minutes^(2)), data = df_no_influential)
-summary(fitUpdate_no_influential)
-par(mfrow=c(2,2))
-plot(fitUpdate_no_influential)
-bptest(fitUpdate_no_influential)
-
-library("car")
-BOOT.MOD=Boot(fitUpdate_no_influential, R=1999)
-summary(BOOT.MOD, high.moments=TRUE)
-
-# confint boot
-Confint(BOOT.MOD, level=c(.95), type="perc")
-hist(BOOT.MOD, legend="separate")
-
-Confint(BOOT.MOD, level=c(.95), type="norm")
+#Separation
 
 
-library(tidyverse)
-library(caret)
+table(d1$Trip_Price, d1$Passenger_Count) #Ok 
+table(d1$Trip_Price, d1$Per_Km_Rate) # Ok
+table(d1$Trip_Price, d1$Per_Minute_Rate) #Ok
+table(d1$Trip_Price, d1$Trip_Distance_km) #Ok
 
-set.seed(123)
-folds <- createFolds(df_no_influential$Trip_Price, k = 10)
-results_rmse <- c()
-results_r2adj <- c()
 
-#Looping through folds
-for(i in 1:10){
-  train <- df_no_influential[-folds[[i]],]
-  test <- df_no_influential[folds[[i]],]
-  model <- lm(Trip_Price^0.38 ~ . + I(Trip_Distance_km^(0.78)) + I(Trip_Duration_Minutes^(2)), data = train)
-  predictions <- predict(model, test)
-  
-  actual <- test$Trip_Price^0.38
-  # RMSE
-  rmse <- sqrt(mean((predictions - actual)^2, na.rm = TRUE))
-  results_rmse <- c(results_rmse, rmse)
-  
-  # R² aggiustato sul test set
-  ss_res <- sum((actual - predictions)^2, na.rm = TRUE)
-  ss_tot <- sum((actual - mean(actual, na.rm=TRUE))^2, na.rm = TRUE)
-  r2 <- 1 - ss_res/ss_tot
-  
-  # calcolo degrees of freedom per adj R2: 
-  # n = lunghezza test set, p = numero di predittori nel modello
-  n <- nrow(test)
-  p <- length(coef(model)) - 1
-  r2_adj <- 1 - (1 - r2) * (n - 1) / (n - p - 1)
-  results_r2adj <- c(results_r2adj, r2_adj)
-}
+library(ggplot2)
+ggplot(d1, aes(x = d1$Trip_Duration_Minutes, y = d1$Trip_Price)) +
+  geom_jitter(height = 0.05) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial")) #Ok 
+library(ggplot2)¯
+ggplot(d1, aes(x = d1$Trip_Distance_km, y = d1$Trip_Price)) +
+  geom_jitter(height = 0.05) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial")) #Ok ¯\_(ツ)_/¯
 
-mean_rmse <- mean(results_rmse, na.rm=TRUE)
-mean_r2adj <- mean(results_r2adj, na.rm=TRUE)
-
-print(mean_rmse)
-print(mean_r2adj)
-# Final Model Summary
-final_model <- lm(Trip_Price^0.38 ~ . + I(Trip_Distance_km^(0.78)) + I(Trip_Duration_Minutes^(2)), data = df_no_influential)
-summary(final_model)
-# Fine Taxi.R
-
+#All ok finish of the MODEL
