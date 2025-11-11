@@ -1,6 +1,6 @@
 # Loading the Data
 ds = read.csv("https://raw.githubusercontent.com/marcel0501/Robust-Model-Taxi-Price-/refs/heads/main/taxi_trip_pricing.csv")
-summary(ds)
+summary(ds) 
 # Inspecting the Data 
 
 #Count of missing values and duplicates AND EVENTUALLY SOLVING ISSUES#
@@ -50,7 +50,10 @@ boxplot(ds$Trip_Price ~ ds$Traffic_Conditions, data = ds, main = "Boxplot di Y p
 boxplot(ds$Trip_Price ~ ds$Weather, data = ds, main = "Boxplot di Y per categorie di X",
         xlab = "Categoria X", ylab = "Valore numerico Y")
 #We notice that for Weekends + High Traffic and worse Weather conditions we get higher prices
+plot(df_no_influential$Trip_Distance_km, df_no_influential$Trip_Price, main="Scatterplot of Trip Price vs Trip Distance", xlab="Trip Distance (km)", ylab="Trip Price", col="blue", pch=19)
 #Correlation between numeric variables
+
+
 cor_matrix <- cor(ds[,sapply(ds,is.numeric)])
 cor_matrix
 library(corrplot)
@@ -209,7 +212,7 @@ results_r2adj <- c()
 for(i in 1:10){
   train <- df_no_influential[-folds[[i]],]
   test <- df_no_influential[folds[[i]],]
-  model <- lm(Trip_Price^0.38 ~ . + I(Trip_Distance_km^(0.78)) + I(Trip_Duration_Minutes^(2)), data = train)
+  model <- lm(Trip_Price^0.38 ~ . + I(Trip_Distance_km^4) + I(Trip_Duration_Minutes^2), data = train)
   predictions <- predict(model, test)
   
   actual <- test$Trip_Price^0.38
@@ -244,8 +247,9 @@ bptest(final_model)
 summary(final_model)
 par(mfrow=c(2,2))
 plot(final_model)
+par(mfrow=c(1,1))
+hist(final_model$residuals)
 # Fine Taxi.R
-
 #Last look at influential points
 library("car")
 influencePlot(final_model,  main="Influence Plot", sub="Circle size is proportial to Cook's Distance" )
