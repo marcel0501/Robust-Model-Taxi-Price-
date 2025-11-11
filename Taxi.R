@@ -168,7 +168,7 @@ cooksd <- cooks.distance(fitUpdate)
 cooksda=data.frame(cooksd)
 summary(cooksd)
 
-# cutoff of cookD  4/(n-k).. NB n should be n used in the model!!!
+# cutoff of cookD  4/(n-k).
 
 n_used=length(fitUpdate$residuals)
 n_used
@@ -239,7 +239,7 @@ mean_r2adj <- mean(results_r2adj, na.rm=TRUE)
 print(mean_rmse)
 print(mean_r2adj)
 # Final Model Summary
-gam1 = gam(Trip_Price^0.38 ~ .-Trip_Distance_km-Trip_Duration_Minutes s(Trip_Distance_km) + s(Trip_Duration_Minutes), data = df_no_influential)
+gam1 = gam(Trip_Price^0.38 ~ .-Trip_Distance_km-Trip_Duration_Minutes +s(Trip_Distance_km) + s(Trip_Duration_Minutes), data = df_no_influential)
 plot(gam1)
 final_model <- lm(Trip_Price^0.38 ~ . + I(Trip_Distance_km^4) + I(Trip_Duration_Minutes^2), data = df_no_influential)
 resettest(final_model)
