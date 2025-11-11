@@ -12,7 +12,7 @@ sum(duplicated(ds)) # Duplicated rows count
 #Filling the missing values, median for assymmetric numeric variables, average for symmetric numeric variables, mode for categorical variables
 hist(ds$Trip_Distance_km) #Median
 hist(ds$Base_Fare) #AVG
-hist(ds$Passenger_Count)
+hist(ds$Passenger_Count) #Median
 hist(ds$Per_Km_Rate) #AVG
 hist(ds$Per_Minute_Rate) #AVG
 hist(ds$Trip_Duration_Minutes) #AVG
@@ -41,6 +41,7 @@ ds$Traffic_Conditions[is.na(ds$Traffic_Conditions)] <- mlv(ds$Traffic_Conditions
 #Issues solved we can proceed with EDA
 #EDA#
 #Relazione tra
+par(mfrow=c(2,2))
 boxplot(ds$Trip_Price ~ ds$Time_of_Day, data = ds, main = "Boxplot di Y per categorie di X",
         xlab = "Categoria X", ylab = "Valore numerico Y")
 boxplot(ds$Trip_Price ~ ds$Day_of_Week, data = ds, main = "Boxplot di Y per categorie di X",
@@ -50,14 +51,14 @@ boxplot(ds$Trip_Price ~ ds$Traffic_Conditions, data = ds, main = "Boxplot di Y p
 boxplot(ds$Trip_Price ~ ds$Weather, data = ds, main = "Boxplot di Y per categorie di X",
         xlab = "Categoria X", ylab = "Valore numerico Y")
 #We notice that for Weekends + High Traffic and worse Weather conditions we get higher prices
-plot(df_no_influential$Trip_Distance_km, df_no_influential$Trip_Price, main="Scatterplot of Trip Price vs Trip Distance", xlab="Trip Distance (km)", ylab="Trip Price", col="blue", pch=19)
+
 #Correlation between numeric variables
 
 
 cor_matrix <- cor(ds[,sapply(ds,is.numeric)])
 cor_matrix
 library(corrplot)
-corrplot(cor_matrix, method = "circle", type = "upper", tl.cex = 0.7)
+corrplot(cor_matrix, method = "number", type = "upper", tl.cex = 0.7)
 #We notice that Trip_Price is highly correlated with Trip_Distance_km
 
 library(psych)
@@ -71,7 +72,7 @@ pairs.panels(ds[,sapply(ds,is.numeric)],
 #We notice already some influence of outliers on some variables
 #Boxplots for numeric variables to spot outliers
 boxplot(ds[,sapply(ds,is.numeric)], main="Boxplots for Numeric Variables", col="lightblue", las=2)
-
+plot(ds$Trip_Distance_km, ds$Trip_Price)
 #Barcharts for categorical variables
 
 barplot(table(ds$Time_of_Day), main="Time of Day", col="lightgreen")
@@ -110,9 +111,13 @@ imcdiag(m)
 #Fitting the full model
 
 fit1 <- lm(Trip_Price ~ ., data = d1)
+summary(fit1)
 #Checking if the model is adequate with reset test
 library(lmtest)
 resettest(fit1, power = 2, type = "fitted")
+bptest(fit1)
+par(mfrow=c(2,2))
+plot(fit1)
 # p-value < 0.05, model not adequate, we need to transform the response variable, Box-Cox transformation
 
 library(MASS)
@@ -150,15 +155,15 @@ gam1 <- gam(Trip_Price^0.38 ~ . -Trip_Distance_km +s(Trip_Distance_km)-Per_Km_Ra
 summary(gam1)
 plot(gam1)
 
-fitUpdate <- update(fitExponential, . ~ . + I(Trip_Distance_km^(0.78)) + I(Trip_Duration_Minutes^(2)))
+fitUpdate <- update(fitExponential, . ~ . + I(Trip_Distance_km^(4)) + I(Trip_Duration_Minutes^(2)))
 summary(fitUpdate)
 resettest(fitUpdate, power = 2, type = "fitted")
 bptest(fitUpdate)
+plot(fitUpdate)
 
-
-
+par(mfrow=c(1,1))
 library(car)
-influencePlot(fit1,  main="Influence Plot", sub="Circle size is proportial to Cook's Distance" )
+influencePlot(fitUpdate,  main="Influence Plot", sub="Circle size is proportial to Cook's Distance" )
 
 
 # Cook's D are contained in the fitted model (object fit)
@@ -172,7 +177,6 @@ summary(cooksd)
 
 n_used=length(fitUpdate$residuals)
 n_used
-# be careful!!! 
 
 cutoff <- 4/(n_used-length(fitUpdate$coefficients)-2)
 
@@ -182,15 +186,41 @@ abline(h=cutoff)
 
 df_no_influential <- d1[cooksd < cutoff, ]
 nrow(df_no_influential)
-fitUpdate_no_influential <- lm(Trip_Price^0.38 ~ . + I(Trip_Distance_km^(0.78)) + I(Trip_Duration_Minutes^(2)), data = df_no_influential)
+fitUpdate_no_influential <- lm(Trip_Price^0.38 ~ . + I(Trip_Distance_km^(4)) + I(Trip_Duration_Minutes^(2)), data = df_no_influential)
 summary(fitUpdate_no_influential)
 par(mfrow=c(2,2))
 plot(fitUpdate_no_influential)
 bptest(fitUpdate_no_influential)
 resettest(fitUpdate_no_influential)
 
+
+
+# Final Model Summary
+
+final_model <- lm(Trip_Price^0.38 ~ . + I(Trip_Distance_km^4) + I(Trip_Duration_Minutes^2), data = df_no_influential)
+resettest(final_model)
+bptest(final_model)
+summary(final_model)
+par(mfrow=c(2,2))
+plot(final_model)
+par(mfrow=c(1,1))
+hist(final_model$residuals)
+# Fine Taxi.R
+#Last look at influential points
 library("car")
-BOOT.MOD=Boot(fitUpdate_no_influential, R=1999)
+influencePlot(final_model,  main="Influence Plot", sub="Circle size is proportial to Cook's Distance" )
+#Eliminiamo osservazione 268 da df_no_influential in quanto poco realistica distanza 120 km e durata 17 minuti 
+#65 Si lascia, già più realistica 
+df_no_influential <- df_no_influential[-which(rownames(df_no_influential)=="268"), ]
+final_model <- lm(Trip_Price^0.38 ~ . + I(Trip_Distance_km^2) + I(Trip_Duration_Minutes^2), data = df_no_influential)
+influencePlot(final_model)
+summary(final_model)
+library(lmtest)
+resettest(final_model,power = 2, type = "fitted")
+bptest(final_model)
+plot(final_model)
+library("car")
+BOOT.MOD=Boot(final_model, R=1999)
 summary(BOOT.MOD, high.moments=TRUE)
 
 # confint boot
@@ -220,13 +250,13 @@ for(i in 1:10){
   rmse <- sqrt(mean((predictions - actual)^2, na.rm = TRUE))
   results_rmse <- c(results_rmse, rmse)
   
-  # R² aggiustato sul test set
+  # R² adj on test set
   ss_res <- sum((actual - predictions)^2, na.rm = TRUE)
   ss_tot <- sum((actual - mean(actual, na.rm=TRUE))^2, na.rm = TRUE)
   r2 <- 1 - ss_res/ss_tot
   
-  # calcolo degrees of freedom per adj R2: 
-  # n = lunghezza test set, p = numero di predittori nel modello
+  # degrees of freedom per adj R2: 
+  # n = nrows test set, p = n of predictors
   n <- nrow(test)
   p <- length(coef(model)) - 1
   r2_adj <- 1 - (1 - r2) * (n - 1) / (n - p - 1)
@@ -238,20 +268,4 @@ mean_r2adj <- mean(results_r2adj, na.rm=TRUE)
 
 print(mean_rmse)
 print(mean_r2adj)
-# Final Model Summary
-gam1 = gam(Trip_Price^0.38 ~ .-Trip_Distance_km-Trip_Duration_Minutes +s(Trip_Distance_km) + s(Trip_Duration_Minutes), data = df_no_influential)
-plot(gam1)
-final_model <- lm(Trip_Price^0.38 ~ . + I(Trip_Distance_km^4) + I(Trip_Duration_Minutes^2), data = df_no_influential)
-resettest(final_model)
-bptest(final_model)
-summary(final_model)
-par(mfrow=c(2,2))
-plot(final_model)
-par(mfrow=c(1,1))
-hist(final_model$residuals)
-# Fine Taxi.R
-#Last look at influential points
-library("car")
-influencePlot(final_model,  main="Influence Plot", sub="Circle size is proportial to Cook's Distance" )
-
 
